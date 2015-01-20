@@ -1,10 +1,13 @@
 package com.welovecoding.netbeans.plugin.editorconfig.processor.operation;
 
+import java.io.File;
 import java.io.IOException;
 import java.net.URISyntaxException;
-import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.util.prefs.BackingStoreException;
 import java.util.prefs.Preferences;
 import javax.swing.text.StyledDocument;
@@ -18,115 +21,53 @@ import org.openide.loaders.DataObject;
 import org.openide.loaders.DataObjectNotFoundException;
 import org.openide.text.NbDocument;
 import org.openide.util.Exceptions;
+import org.openide.util.Utilities;
 
-/**
- *
- * @author Michael Koppen
- */
 public class IndentSizeOperationTest extends NbTestCase {
 
-  private final DataObject testDataObject;
+  private DataObject dataObject = null;
+  private File file = null;
 
   public IndentSizeOperationTest(String testName) throws URISyntaxException, DataObjectNotFoundException {
     super(testName);
-    String path = "files/IndentSize.html";
-    URL url = Thread.currentThread().getContextClassLoader().getResource(path);
-    Path testFilePath = Paths.get(url.toURI());
-    testDataObject = DataObject.find(FileUtil.toFileObject(testFilePath.toFile()));
+
+    String with4Spaces = "(function(){" + System.lineSeparator();
+    with4Spaces += "    alert('Hello World!');" + System.lineSeparator();
+    with4Spaces += "})();";
+
+    try {
+      file = File.createTempFile(this.getClass().getSimpleName(), ".js");
+      Path path = Paths.get(Utilities.toURI(file));
+      Files.write(path, with4Spaces.getBytes(StandardCharsets.UTF_8), StandardOpenOption.CREATE);
+      dataObject = DataObject.find(FileUtil.toFileObject(file));
+    } catch (IOException ex) {
+      Exceptions.printStackTrace(ex);
+    }
   }
 
-  /**
-   * Test of apply method, of class IndentSizeOperation.
-   *
-   * @throws java.lang.Exception
-   */
   public void testSpaceConversion() throws Exception {
-    System.out.println("########  Test: " + getName() + "  #######");
-
     String expected = "<html>"
-            + "\n" + "    <b>Hello!</b>"
+            + "\n" + "  <b>Hello!</b>"
             + "</html>";
 
-    Preferences codeStyle = CodeStylePreferences.get(testDataObject.getPrimaryFile(), testDataObject.getPrimaryFile().getMIMEType()).getPreferences();
-    boolean change = IndentSizeOperation.doIndentSize(testDataObject, "4");
+    Preferences codeStyle = CodeStylePreferences.get(
+            dataObject.getPrimaryFile(),
+            dataObject.getPrimaryFile().getMIMEType()
+    ).getPreferences();
 
-    try {
-      codeStyle.flush();
-    } catch (BackingStoreException ex) {
-      Exceptions.printStackTrace(ex);
-    }
+    // Check indent size before change (should be -1)
+    int beforeChange = codeStyle.getInt(SimpleValueNames.INDENT_SHIFT_WIDTH, -1);
+    assertEquals(-1, beforeChange);
 
-    EditorCookie cookie = getEditorCookie(testDataObject);
-    cookie.open();
-    StyledDocument document = cookie.openDocument();
-    NbDocument.runAtomicAsUser(document, () -> {
-      try {
-        cookie.saveDocument();
-      } catch (IOException ex) {
-        Exceptions.printStackTrace(ex);
-      }
-    });
+    // Set indent size to 2
+    codeStyle.putInt(SimpleValueNames.INDENT_SHIFT_WIDTH, 2);
 
-    String output = testDataObject.getPrimaryFile().asText();
+    // Save new style
+    codeStyle.flush();
 
-    System.out.println("Input in ASCII numbers: ");
-    System.out.println(getASCIINumbers(expected));
-    System.out.println(getASCIICharacters(expected));
+    // Check indent size after change
+    int afterChange = codeStyle.getInt(SimpleValueNames.INDENT_SHIFT_WIDTH, -1);
 
-    System.out.println("Output in ASCII numbers: ");
-    System.out.println(getASCIINumbers(output));
-    System.out.println(getASCIICharacters(output));
-
-    System.out.println("Saved data:");
-    System.out.println(output);
-
-    int newIndentSize = codeStyle.getInt(SimpleValueNames.INDENT_SHIFT_WIDTH, -1);
-
-    assertEquals(true, change);
-    assertEquals(4, newIndentSize);
-    // TODO: This does not work! Maybe we have to execute NetBeans Reformat!
-    // assertEquals(expected, output);
+    assertEquals(2, afterChange);
   }
-
-  private EditorCookie getEditorCookie(FileObject fileObject) {
-    try {
-      return (EditorCookie) DataObject.find(fileObject).getLookup().lookup(EditorCookie.class);
-    } catch (DataObjectNotFoundException ex) {
-      Exceptions.printStackTrace(ex);
-      return null;
-    }
-  }
-
-  private EditorCookie getEditorCookie(DataObject dataObject) {
-    return getEditorCookie(dataObject.getPrimaryFile());
-  }
-
-  private String getASCIINumbers(String str) {
-    StringBuilder sb = new StringBuilder();
-
-    for (char c : str.toCharArray()) {
-      int number = (int) c;
-
-      if (number < 100) {
-        sb.append("0").append(number);
-      } else {
-        sb.append(number);
-      }
-
-      sb.append("|");
-    }
-
-    return sb.toString();
-  }
-
-  private String getASCIICharacters(String str) {
-    StringBuilder sb = new StringBuilder();
-
-    for (char c : str.toCharArray()) {
-      sb.append(" ").append(c).append(" |");
-    }
-
-    return sb.toString();
-  }
-
 }
